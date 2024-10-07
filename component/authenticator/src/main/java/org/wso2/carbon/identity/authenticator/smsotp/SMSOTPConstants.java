@@ -195,6 +195,7 @@ public class SMSOTPConstants {
     public static final String AUTHENTICATOR_SMS_OTP = "authenticator.sms.otp";
     public static final String CODE_PARAM = "code.param";
     public static final String USERNAME_PARAM = "username.param";
+    public static final String REMAINING_NUMBER_OF_SMS_OTP_ATTEMPTS_QUERY = "&remainingNumberOfSMSOtpAttempts=";
 
     /**
      * Enums for error messages.

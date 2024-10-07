@@ -90,6 +90,7 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -1007,6 +1008,11 @@ public class SMSOTPAuthenticator extends AbstractApplicationAuthenticator implem
                             + SMSOTPUtils.isEnableResendCode(context) + SMSOTPConstants.ERROR_MESSAGE +
                             SMSOTPConstants.TOKEN_EXPIRED_VALUE);
                 } else {
+                    if (SMSOTPUtils.isShowAuthFailureReason(context)) {
+                        int remainingNumberOfSMSOtpAttempts = getRemainingNumberOfOtpAttempts(context);
+                        url += SMSOTPConstants.REMAINING_NUMBER_OF_SMS_OTP_ATTEMPTS_QUERY +
+                                remainingNumberOfSMSOtpAttempts;
+                    }
                     response.sendRedirect(url + SMSOTPConstants.RESEND_CODE
                             + SMSOTPUtils.isEnableResendCode(context) + SMSOTPConstants.RETRY_PARAMS);
                 }
@@ -2655,4 +2661,41 @@ public class SMSOTPAuthenticator extends AbstractApplicationAuthenticator implem
         authenticatorData.setAuthParams(authenticatorParamMetadataList);
         return Optional.of(authenticatorData);
     }
+
+    /**
+     * Get remaining number of otp attempts.
+     *
+     * @param context Authentication context.
+     * @throws AuthenticationFailedException Exception on authentication failure.
+     */
+    private int getRemainingNumberOfOtpAttempts(AuthenticationContext context) throws AuthenticationFailedException {
+
+        AuthenticatedUser authenticatedUser =
+                (AuthenticatedUser) context.getProperty(SMSOTPConstants.AUTHENTICATED_USER);
+        String usernameWithDomain = IdentityUtil.addDomainToName(authenticatedUser.getUserName(),
+                authenticatedUser.getUserStoreDomain());
+        try {
+            UserRealm userRealm = getUserRealm(authenticatedUser);
+
+            String[] claimsToCheck = {SMSOTPConstants.SMS_OTP_FAILED_ATTEMPTS_CLAIM,
+                    SMSOTPConstants.FAILED_LOGIN_LOCKOUT_COUNT_CLAIM};
+            Map<String, String> userClaims = userRealm.getUserStoreManager()
+                    .getUserClaimValues(usernameWithDomain, claimsToCheck, UserCoreConstants.DEFAULT_PROFILE);
+            String failedSmsOtpAttempts = userClaims.get(SMSOTPConstants.SMS_OTP_FAILED_ATTEMPTS_CLAIM);
+            int maxFailedAttemptsOnAccountLock = Arrays.stream(SMSOTPUtils
+                            .getAccountLockConnectorConfigs(authenticatedUser.getTenantDomain()))
+                    .filter(config -> SMSOTPConstants.PROPERTY_ACCOUNT_LOCK_ON_FAILURE_MAX.equals(config.getName()))
+                    .findFirst()
+                    .map(config -> Integer.parseInt(config.getValue()))
+                    .orElseThrow(() -> new AuthenticationFailedException("No configuration found for " +
+                            SMSOTPConstants.PROPERTY_ACCOUNT_LOCK_ON_FAILURE_MAX));
+            return maxFailedAttemptsOnAccountLock - Integer.parseInt(failedSmsOtpAttempts);
+        } catch (UserStoreException e) {
+            log.error("Error while getting remaining SMS OTP attempts", e);
+            String errorMessage =
+                    String.format("Failed to get remaining attempts count for user : %s.", authenticatedUser);
+            throw new AuthenticationFailedException(errorMessage, e);
+        }
+    }
+
 }
